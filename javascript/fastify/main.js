@@ -1,6 +1,8 @@
 const fastify = require('fastify')({ logger: true })
 const routes = require('./routes')
+const db = require('./db')
 
+fastify.register(db, { url: 'mongodb://localhost:27017/' })
 fastify.register(routes)
 
 const start = async () => {
