@@ -1,8 +1,21 @@
+const indexOptions = {
+  schema: {
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          hello: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
 const routes = async (fastify, options) => {
   const db = fastify.mongo.db('db')
   const collection = db.collection('test')
 
-  fastify.get('/', async (request, response) => {
+  fastify.get('/', indexOptions, async (request, response) => {
     return { hello: 'world' }
   })
 
