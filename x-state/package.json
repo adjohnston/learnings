@@ -1,0 +1,8 @@
+{
+  "name": "@learnings/x-state",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "xstate": "^4.8.0"
+  }
+}
