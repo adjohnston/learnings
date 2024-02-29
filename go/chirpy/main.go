@@ -27,6 +27,7 @@ func main() {
 	corsMux := middlewareCors(mux)
 
 	mux.Handle("/", http.FileServer(http.Dir(".")))
+	mux.Handle("assets/logo.png", http.FileServer(http.Dir("./assets/logo.png")))
 
 	server := &http.Server{
 		Addr:    ":8081",
