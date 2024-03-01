@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type apiConfig struct {
@@ -58,17 +60,20 @@ func middlewareCors(next http.Handler) http.Handler {
 }
 
 func main() {
-	mux := http.NewServeMux()
-	corsMux := middlewareCors(mux)
+	r := chi.NewRouter()
+	apiRouter := chi.NewRouter()
+	corsMux := middlewareCors(r)
 	hits := apiConfig{fileserverHits: 0}
 
-	mux.Handle("/healthz", http.HandlerFunc(healthz))
-	mux.Handle("/metrics", http.HandlerFunc(metrics(&hits)))
-	mux.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
+	r.Mount("/api", apiRouter)
+	apiRouter.Get("/healthz", healthz)
+	apiRouter.Get("/metrics", metrics(&hits))
+	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
 
-	mux.Handle("/app", middlewareMetricsInc(&hits, http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
+	fsHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 
-	mux.Handle("assets/logo.png", http.FileServer(http.Dir("./assets/logo.png")))
+	r.Handle("/app", middlewareMetricsInc(&hits, fsHandler))
+	r.Handle("/app/*", middlewareMetricsInc(&hits, fsHandler))
 
 	server := &http.Server{
 		Addr:    ":8081",
