@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -31,6 +32,49 @@ func resetMetrics(c *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 		c.fileserverHits = 0
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+func validateChirp(w http.ResponseWriter, r *http.Request) {
+	type params struct {
+		Body string `json:"body"`
+	}
+
+	d := json.NewDecoder(r.Body)
+	p := params{}
+	err := d.Decode(&p)
+
+	if err != nil {
+		type response struct {
+			Error string `json:"error"`
+		}
+
+		resp, _ := json.Marshal(response{Error: "Something went wrong"})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(resp)
+		return
+	}
+
+	if len(p.Body) > 140 {
+		type response struct {
+			Error string `json:"error"`
+		}
+
+		resp, _ := json.Marshal(response{Error: "Chirp is too long"})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(resp)
+		return
+	}
+
+	type response struct {
+		Valid bool `json:"valid"`
+	}
+
+	resp, _ := json.Marshal(response{Valid: true})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(resp)
 }
 
 func middlewareMetricsInc(cfg *apiConfig, next http.Handler) http.Handler {
@@ -69,6 +113,7 @@ func main() {
 	apiRouter.Get("/healthz", healthz)
 	apiRouter.Get("/metrics", metrics(&hits))
 	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
+	apiRouter.Post("/validate_chirp", validateChirp)
 
 	adminRouter := chi.NewRouter()
 	r.Mount("/admin", adminRouter)
