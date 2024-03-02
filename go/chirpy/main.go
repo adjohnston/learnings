@@ -5,12 +5,34 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type apiConfig struct {
 	fileserverHits int
+}
+
+func sanitiseChirp(original string) (chirp string) {
+	bannedWords := [3]string{
+		"kerfuffle",
+		"sharbert",
+		"fornax",
+	}
+
+	words := strings.Split(original, " ")
+
+	for i, w := range words {
+		for _, b := range bannedWords {
+			if strings.ToLower(w) == b {
+				words[i] = "****"
+				continue
+			}
+		}
+	}
+
+	return strings.Join(words, " ")
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +89,13 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	chirp := sanitiseChirp(p.Body)
+
 	type response struct {
-		Valid bool `json:"valid"`
+		CleanedBody string `json:"cleaned_body"`
 	}
 
-	resp, _ := json.Marshal(response{Valid: true})
+	resp, _ := json.Marshal(response{CleanedBody: chirp})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
