@@ -15,20 +15,17 @@ type apiConfig struct {
 }
 
 func sanitiseChirp(original string) (chirp string) {
-	bannedWords := [3]string{
-		"kerfuffle",
-		"sharbert",
-		"fornax",
+	bannedWords := map[string]bool{
+		"kerfuffle": true,
+		"sharbert":  true,
+		"fornax":    true,
 	}
 
 	words := strings.Split(original, " ")
 
 	for i, w := range words {
-		for _, b := range bannedWords {
-			if strings.ToLower(w) == b {
-				words[i] = "****"
-				continue
-			}
+		if bannedWords[strings.ToLower(w)] {
+			words[i] = "****"
 		}
 	}
 
