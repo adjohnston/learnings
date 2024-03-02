@@ -61,14 +61,18 @@ func middlewareCors(next http.Handler) http.Handler {
 
 func main() {
 	r := chi.NewRouter()
-	apiRouter := chi.NewRouter()
 	corsMux := middlewareCors(r)
 	hits := apiConfig{fileserverHits: 0}
 
+	apiRouter := chi.NewRouter()
 	r.Mount("/api", apiRouter)
 	apiRouter.Get("/healthz", healthz)
 	apiRouter.Get("/metrics", metrics(&hits))
 	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
+
+	adminRouter := chi.NewRouter()
+	r.Mount("/admin", adminRouter)
+	r.Get("/admin/metrics", hits.metricsHandler)
 
 	fsHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 
