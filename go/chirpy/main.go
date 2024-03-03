@@ -32,6 +32,18 @@ func sanitiseChirp(original string) (chirp string) {
 	return strings.Join(words, " ")
 }
 
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	response, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(response)
+}
+
 func healthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
@@ -40,9 +52,7 @@ func healthz(w http.ResponseWriter, r *http.Request) {
 
 func metrics(c *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf("Hits: %d", c.fileserverHits)))
+		respondWithJSON(w, http.StatusOK, fmt.Sprintf("Hits: %d", c.fileserverHits))
 	}
 }
 
@@ -67,10 +77,7 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 			Error string `json:"error"`
 		}
 
-		resp, _ := json.Marshal(response{Error: "Something went wrong"})
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(resp)
+		respondWithJSON(w, http.StatusBadRequest, response{Error: "Something went wrong"})
 		return
 	}
 
@@ -79,10 +86,7 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 			Error string `json:"error"`
 		}
 
-		resp, _ := json.Marshal(response{Error: "Chirp is too long"})
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write(resp)
+		respondWithJSON(w, http.StatusBadRequest, response{Error: "Chirp is too long"})
 		return
 	}
 
@@ -92,10 +96,7 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 		CleanedBody string `json:"cleaned_body"`
 	}
 
-	resp, _ := json.Marshal(response{CleanedBody: chirp})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
+	respondWithJSON(w, http.StatusOK, response{CleanedBody: chirp})
 }
 
 func middlewareMetricsInc(cfg *apiConfig, next http.Handler) http.Handler {
