@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/adjohnston/chirpy/internal/db"
 	"github.com/go-chi/chi/v5"
 )
 
 type apiConfig struct {
 	fileserverHits int
+	DB             *db.DB
 }
 
 func sanitiseChirp(original string) (chirp string) {
@@ -63,40 +65,70 @@ func resetMetrics(c *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func validateChirp(w http.ResponseWriter, r *http.Request) {
-	type params struct {
-		Body string `json:"body"`
-	}
+func getChirps(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		chirps, err := db.GetChirps()
 
-	d := json.NewDecoder(r.Body)
-	p := params{}
-	err := d.Decode(&p)
+		if err != nil {
+			type response struct {
+				Error string `json:"error"`
+			}
 
-	if err != nil {
-		type response struct {
-			Error string `json:"error"`
+			respondWithJSON(w, http.StatusInternalServerError, response{Error: "Something went wrong"})
+			return
 		}
 
-		respondWithJSON(w, http.StatusBadRequest, response{Error: "Something went wrong"})
-		return
+		respondWithJSON(w, http.StatusOK, chirps)
 	}
+}
 
-	if len(p.Body) > 140 {
-		type response struct {
-			Error string `json:"error"`
+func createChirps(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type params struct {
+			Body string `json:"body"`
 		}
 
-		respondWithJSON(w, http.StatusBadRequest, response{Error: "Chirp is too long"})
-		return
+		d := json.NewDecoder(r.Body)
+		p := params{}
+		err := d.Decode(&p)
+
+		if err != nil {
+			type response struct {
+				Error string `json:"error"`
+			}
+
+			respondWithJSON(w, http.StatusBadRequest, response{Error: "Something went wrong"})
+			return
+		}
+
+		if len(p.Body) > 140 {
+			type response struct {
+				Error string `json:"error"`
+			}
+
+			respondWithJSON(w, http.StatusBadRequest, response{Error: "Chirp is too long"})
+			return
+		}
+
+		santisedChirp := sanitiseChirp(p.Body)
+		newChirp, err := db.CreateChirp(santisedChirp)
+
+		if err != nil {
+			type response struct {
+				Error string `json:"error"`
+			}
+
+			respondWithJSON(w, http.StatusInternalServerError, response{Error: "Something went wrong"})
+			return
+		}
+
+		type response struct {
+			Body string `json:"body"`
+			ID   int    `json:"id"`
+		}
+
+		respondWithJSON(w, http.StatusCreated, response{ID: newChirp.ID, Body: newChirp.Body})
 	}
-
-	chirp := sanitiseChirp(p.Body)
-
-	type response struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
-
-	respondWithJSON(w, http.StatusOK, response{CleanedBody: chirp})
 }
 
 func middlewareMetricsInc(cfg *apiConfig, next http.Handler) http.Handler {
@@ -128,14 +160,21 @@ func middlewareCors(next http.Handler) http.Handler {
 func main() {
 	r := chi.NewRouter()
 	corsMux := middlewareCors(r)
-	hits := apiConfig{fileserverHits: 0}
+	db, err := db.NewDB("database.json")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	hits := apiConfig{fileserverHits: 0, DB: db}
 
 	apiRouter := chi.NewRouter()
 	r.Mount("/api", apiRouter)
 	apiRouter.Get("/healthz", healthz)
 	apiRouter.Get("/metrics", metrics(&hits))
 	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
-	apiRouter.Post("/validate_chirp", validateChirp)
+	apiRouter.Get("/chirps", getChirps(db))
+	apiRouter.Post("/chirps", createChirps(db))
 
 	adminRouter := chi.NewRouter()
 	r.Mount("/admin", adminRouter)
