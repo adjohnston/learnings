@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/adjohnston/chirpy/internal/db"
@@ -79,6 +80,38 @@ func getChirps(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 		}
 
 		respondWithJSON(w, http.StatusOK, chirps)
+	}
+}
+
+func getChirp(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idParam := chi.URLParam(r, "id")
+		id, err := strconv.Atoi(idParam)
+
+		if err != nil {
+			type response struct {
+				Error string `json:"error"`
+			}
+
+			respondWithJSON(w, http.StatusInternalServerError, response{Error: "Unable to parse ID"})
+		}
+
+		chirp, err := db.GetChirpByID(id)
+
+		if err != nil {
+			type response struct {
+				Error string `json:"error"`
+			}
+
+			respondWithJSON(w, http.StatusNotFound, response{Error: "Chirp not found"})
+		}
+
+		type response struct {
+			ID   int    `json:"id"`
+			Body string `json:"body"`
+		}
+
+		respondWithJSON(w, http.StatusOK, response{ID: chirp.ID, Body: chirp.Body})
 	}
 }
 
@@ -174,6 +207,7 @@ func main() {
 	apiRouter.Get("/metrics", metrics(&hits))
 	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
 	apiRouter.Get("/chirps", getChirps(db))
+	apiRouter.Get("/chirps/{id}", getChirp(db))
 	apiRouter.Post("/chirps", createChirps(db))
 
 	adminRouter := chi.NewRouter()
