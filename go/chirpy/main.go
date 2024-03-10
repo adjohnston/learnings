@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -210,6 +212,17 @@ func middlewareCors(next http.Handler) http.Handler {
 func main() {
 	r := chi.NewRouter()
 	corsMux := middlewareCors(r)
+	debug := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+
+	if *debug {
+		fmt.Println("Debug mode enabled")
+		err := os.Remove("database.json")
+		if err != nil {
+			fmt.Println("Error removing database.json", err)
+		}
+	}
+
 	db, err := db.NewDB("database.json")
 
 	if err != nil {
