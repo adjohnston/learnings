@@ -47,6 +47,14 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Write(response)
 }
 
+func respondWithErr(w http.ResponseWriter, code int, error string) {
+	type response struct {
+		Error string `json:"error"`
+	}
+
+	respondWithJSON(w, code, response{Error: error})
+}
+
 func healthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
@@ -66,16 +74,43 @@ func resetMetrics(c *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func createUser(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type params struct {
+			Email string `json:"email"`
+		}
+
+		d := json.NewDecoder(r.Body)
+		p := params{}
+		err := d.Decode(&p)
+
+		if err != nil {
+			respondWithErr(w, http.StatusBadRequest, "Something went wrong")
+			return
+		}
+
+		newUser, err := db.CreateUser(p.Email)
+
+		if err != nil {
+			respondWithErr(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
+		type response struct {
+			ID    int    `json:"id"`
+			Email string `json:"email"`
+		}
+
+		respondWithJSON(w, http.StatusCreated, response{ID: newUser.ID, Email: newUser.Email})
+	}
+}
+
 func getChirps(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		chirps, err := db.GetChirps()
 
 		if err != nil {
-			type response struct {
-				Error string `json:"error"`
-			}
-
-			respondWithJSON(w, http.StatusInternalServerError, response{Error: "Something went wrong"})
+			respondWithErr(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
 
@@ -89,21 +124,15 @@ func getChirp(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(idParam)
 
 		if err != nil {
-			type response struct {
-				Error string `json:"error"`
-			}
-
-			respondWithJSON(w, http.StatusInternalServerError, response{Error: "Unable to parse ID"})
+			respondWithErr(w, http.StatusBadRequest, "Unable to parse ID")
+			return
 		}
 
 		chirp, err := db.GetChirpByID(id)
 
 		if err != nil {
-			type response struct {
-				Error string `json:"error"`
-			}
-
-			respondWithJSON(w, http.StatusNotFound, response{Error: "Chirp not found"})
+			respondWithErr(w, http.StatusNotFound, "Chirp not found")
+			return
 		}
 
 		type response struct {
@@ -126,20 +155,12 @@ func createChirps(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 		err := d.Decode(&p)
 
 		if err != nil {
-			type response struct {
-				Error string `json:"error"`
-			}
-
-			respondWithJSON(w, http.StatusBadRequest, response{Error: "Something went wrong"})
+			respondWithErr(w, http.StatusBadRequest, "Something went wrong")
 			return
 		}
 
 		if len(p.Body) > 140 {
-			type response struct {
-				Error string `json:"error"`
-			}
-
-			respondWithJSON(w, http.StatusBadRequest, response{Error: "Chirp is too long"})
+			respondWithErr(w, http.StatusBadRequest, "Chirp is too long")
 			return
 		}
 
@@ -147,11 +168,7 @@ func createChirps(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 		newChirp, err := db.CreateChirp(santisedChirp)
 
 		if err != nil {
-			type response struct {
-				Error string `json:"error"`
-			}
-
-			respondWithJSON(w, http.StatusInternalServerError, response{Error: "Something went wrong"})
+			respondWithErr(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
 
@@ -209,6 +226,7 @@ func main() {
 	apiRouter.Get("/chirps", getChirps(db))
 	apiRouter.Get("/chirps/{id}", getChirp(db))
 	apiRouter.Post("/chirps", createChirps(db))
+	apiRouter.Post("/users", createUser(db))
 
 	adminRouter := chi.NewRouter()
 	r.Mount("/admin", adminRouter)
