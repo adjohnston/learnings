@@ -79,7 +79,8 @@ func resetMetrics(c *apiConfig) func(w http.ResponseWriter, r *http.Request) {
 func createUser(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type params struct {
-			Email string `json:"email"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
 		}
 
 		d := json.NewDecoder(r.Body)
@@ -91,7 +92,7 @@ func createUser(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		newUser, err := db.CreateUser(p.Email)
+		newUser, err := db.CreateUser(p.Email, p.Password)
 
 		if err != nil {
 			respondWithErr(w, http.StatusInternalServerError, "Something went wrong")
@@ -104,6 +105,38 @@ func createUser(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 		}
 
 		respondWithJSON(w, http.StatusCreated, response{ID: newUser.ID, Email: newUser.Email})
+	}
+}
+
+func login(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type requestBody struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+
+		d := json.NewDecoder(r.Body)
+		json := requestBody{}
+		err := d.Decode(&json)
+
+		if err != nil {
+			respondWithErr(w, http.StatusBadRequest, "Something went wrong")
+			return
+		}
+
+		user, err := db.LoginUser(json.Email, json.Password)
+
+		if err != nil {
+			respondWithErr(w, http.StatusUnauthorized, "Invalid credentials")
+			return
+		}
+
+		type response struct {
+			ID    int    `json:"id"`
+			Email string `json:"email"`
+		}
+
+		respondWithJSON(w, http.StatusOK, response{ID: user.ID, Email: user.Email})
 	}
 }
 
@@ -240,6 +273,7 @@ func main() {
 	apiRouter.Get("/chirps/{id}", getChirp(db))
 	apiRouter.Post("/chirps", createChirps(db))
 	apiRouter.Post("/users", createUser(db))
+	apiRouter.Post("/login", login(db))
 
 	adminRouter := chi.NewRouter()
 	r.Mount("/admin", adminRouter)
