@@ -3,3 +3,6 @@ chirpy
 
 #db
 database.json
+
+# environment
+.env

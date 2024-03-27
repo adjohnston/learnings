@@ -5,24 +5,11 @@ import (
 	"errors"
 	"os"
 	"sync"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
 	path string
 	mux  *sync.RWMutex
-}
-
-type Chirp struct {
-	ID   int    `json:"id"`
-	Body string `json:"body"`
-}
-
-type User struct {
-	ID       int    `json:"id"`
-	Email    string `json:"email"`
-	Password []byte `json:"password"`
 }
 
 type DBStructure struct {
@@ -92,101 +79,4 @@ func NewDB(path string) (*DB, error) {
 	err := db.ensure()
 
 	return db, err
-}
-
-func (db *DB) GetChirps() ([]Chirp, error) {
-	dbStructure, err := db.load()
-	if err != nil {
-		return nil, err
-	}
-
-	chirps := make([]Chirp, 0, len(dbStructure.Chirps))
-	for _, chirp := range dbStructure.Chirps {
-		chirps = append(chirps, chirp)
-	}
-
-	return chirps, nil
-}
-
-func (db *DB) GetChirpByID(id int) (Chirp, error) {
-	dbStructure, err := db.load()
-	if err != nil {
-		return Chirp{}, err
-	}
-
-	chirp, ok := dbStructure.Chirps[id]
-	if !ok {
-		return Chirp{}, errors.New("chirp not found")
-	}
-
-	return chirp, nil
-}
-
-func (db *DB) CreateChirp(body string) (Chirp, error) {
-	dbStructure, err := db.load()
-	if err != nil {
-		return Chirp{}, err
-	}
-
-	id := len(dbStructure.Chirps) + 1
-	chirp := Chirp{
-		ID:   id,
-		Body: body,
-	}
-	dbStructure.Chirps[id] = chirp
-
-	err = db.write(dbStructure)
-	if err != nil {
-		return Chirp{}, err
-	}
-
-	return chirp, nil
-}
-
-func (db *DB) GetUserByEmail(email string) (*User, error) {
-	dbStructure, err := db.load()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, user := range dbStructure.Users {
-		if user.Email == email {
-			return &user, nil
-		}
-	}
-
-	return nil, errors.New("user not found")
-}
-
-func (db *DB) CreateUser(email string, plainPassword string) (User, error) {
-	dbStructure, err := db.load()
-	if err != nil {
-		return User{}, err
-	}
-
-	existingUser, _ := db.GetUserByEmail(email)
-	if existingUser != nil {
-		return User{}, errors.New("user already exists")
-	}
-
-	id := len(dbStructure.Users) + 1
-	password, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return User{}, err
-	}
-
-	user := User{
-		ID:       id,
-		Email:    email,
-		Password: password,
-	}
-
-	dbStructure.Users[id] = user
-	err = db.write(dbStructure)
-
-	if err != nil {
-		return User{}, err
-	}
-
-	return user, nil
 }

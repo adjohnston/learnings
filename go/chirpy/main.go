@@ -12,10 +12,12 @@ import (
 
 	"github.com/adjohnston/chirpy/internal/db"
 	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
 )
 
 type apiConfig struct {
 	fileserverHits int
+	jwtSecret      string
 	DB             *db.DB
 }
 
@@ -85,16 +87,11 @@ func createUser(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 
 		d := json.NewDecoder(r.Body)
 		p := params{}
-		err := d.Decode(&p)
+		decodeErr := d.Decode(&p)
+		hashedPassword, hashedPasswordErr := db.HashPassword(p.Password)
+		newUser, createUserErr := db.CreateUser(p.Email, hashedPassword)
 
-		if err != nil {
-			respondWithErr(w, http.StatusBadRequest, "Something went wrong")
-			return
-		}
-
-		newUser, err := db.CreateUser(p.Email, p.Password)
-
-		if err != nil {
+		if decodeErr != nil || hashedPasswordErr != nil || createUserErr != nil {
 			respondWithErr(w, http.StatusInternalServerError, "Something went wrong")
 			return
 		}
@@ -108,11 +105,54 @@ func createUser(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func login(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
+func updateUser(db *db.DB, c apiConfig) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		type requestBody struct {
+		bearerToken := r.Header.Get("Authorization")
+		token := strings.Split(bearerToken, " ")[1]
+		userId, err := c.Validate(token)
+
+		if err != nil {
+			respondWithErr(w, http.StatusUnauthorized, "Invalid token")
+			return
+		}
+
+		type params struct {
 			Email    string `json:"email"`
 			Password string `json:"password"`
+		}
+
+		d := json.NewDecoder(r.Body)
+		p := params{}
+		err = d.Decode(&p)
+		hashedPassword, hashedPasswordErr := db.HashPassword(p.Password)
+
+		if err != nil || hashedPasswordErr != nil {
+			respondWithErr(w, http.StatusBadRequest, "Something went wrong")
+			return
+		}
+
+		updatedUser, err := db.UpdateUser(userId, p.Email, hashedPassword)
+
+		if err != nil {
+			respondWithErr(w, http.StatusInternalServerError, "Unable to update user")
+			return
+		}
+
+		type response struct {
+			ID    int    `json:"id"`
+			Email string `json:"email"`
+		}
+
+		respondWithJSON(w, http.StatusOK, response{ID: updatedUser.ID, Email: updatedUser.Email})
+	}
+}
+
+func login(db *db.DB, c apiConfig) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		type requestBody struct {
+			Email            string `json:"email"`
+			Password         string `json:"password"`
+			ExpiresInSeconds int    `json:"expires_in_seconds"`
 		}
 
 		d := json.NewDecoder(r.Body)
@@ -131,12 +171,20 @@ func login(db *db.DB) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		token, err := c.CreateAuthToken(user.ID, json.ExpiresInSeconds)
+
+		if err != nil {
+			respondWithErr(w, http.StatusInternalServerError, "Something went wrong")
+			return
+		}
+
 		type response struct {
 			ID    int    `json:"id"`
 			Email string `json:"email"`
+			Token string `json:"token"`
 		}
 
-		respondWithJSON(w, http.StatusOK, response{ID: user.ID, Email: user.Email})
+		respondWithJSON(w, http.StatusOK, response{ID: user.ID, Email: user.Email, Token: token})
 	}
 }
 
@@ -243,6 +291,7 @@ func middlewareCors(next http.Handler) http.Handler {
 }
 
 func main() {
+	godotenv.Load()
 	r := chi.NewRouter()
 	corsMux := middlewareCors(r)
 	debug := flag.Bool("debug", false, "Enable debug mode")
@@ -262,27 +311,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	hits := apiConfig{fileserverHits: 0, DB: db}
+	config := apiConfig{fileserverHits: 0, jwtSecret: os.Getenv("JWT_SECRET"), DB: db}
 
 	apiRouter := chi.NewRouter()
 	r.Mount("/api", apiRouter)
 	apiRouter.Get("/healthz", healthz)
-	apiRouter.Get("/metrics", metrics(&hits))
-	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&hits)))
+	apiRouter.Get("/metrics", metrics(&config))
+	apiRouter.Handle("/reset", http.HandlerFunc(resetMetrics(&config)))
 	apiRouter.Get("/chirps", getChirps(db))
 	apiRouter.Get("/chirps/{id}", getChirp(db))
 	apiRouter.Post("/chirps", createChirps(db))
 	apiRouter.Post("/users", createUser(db))
-	apiRouter.Post("/login", login(db))
+	apiRouter.Put("/users", updateUser(db, config))
+	apiRouter.Post("/login", login(db, config))
 
 	adminRouter := chi.NewRouter()
 	r.Mount("/admin", adminRouter)
-	r.Get("/admin/metrics", hits.metricsHandler)
+	r.Get("/admin/metrics", config.metricsHandler)
 
 	fsHandler := http.StripPrefix("/app", http.FileServer(http.Dir(".")))
 
-	r.Handle("/app", middlewareMetricsInc(&hits, fsHandler))
-	r.Handle("/app/*", middlewareMetricsInc(&hits, fsHandler))
+	r.Handle("/app", middlewareMetricsInc(&config, fsHandler))
+	r.Handle("/app/*", middlewareMetricsInc(&config, fsHandler))
 
 	server := &http.Server{
 		Addr:    ":8081",
